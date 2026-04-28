@@ -753,72 +753,75 @@ class DBInfos(DictInfos):
         # Now for each tables, load information
         # for table_name in tqdm(tables_to_load):
         for table_name in tables_to_load:
-            # for table_name in (pbar := tqdm(tables_to_load)):
-            #    pbar.set_description(f"Processing {table_name}")
-            log.info(f"Loading information from table [{table_name}]")
-            df = self.db.get_table(table_name)
-            self._fix_specific_colname(df, table_name)
-            self._fixcolname(df)
-            # self._fixtime(df)
-            flags = self._get_info_flag(df)
+            try;
+                # for table_name in (pbar := tqdm(tables_to_load)):
+                #    pbar.set_description(f"Processing {table_name}")
+                log.info(f"Loading information from table [{table_name}]")
+                df = self.db.get_table(table_name)
+                self._fix_specific_colname(df, table_name)
+                self._fixcolname(df)
+                # self._fixtime(df)
+                flags = self._get_info_flag(df)
 
-            if flags & DBInfosFlag.CAMERA:
-                cameras = set(df["camera"])
-                for camera in cameras:
-                    df_sel = df[df["camera"] == camera]
-                    if camera not in self.tel:
-                        self.tel[camera] = DBCameraInfos(tel=camera, df=df_sel)
-                    if table_name not in self.tel[camera]:
-                        self.tel[camera][table_name] = DBTableInfos(
-                            table_name=table_name, df=df_sel
-                        )
+                if flags & DBInfosFlag.CAMERA:
+                    cameras = set(df["camera"])
+                    for camera in cameras:
+                        df_sel = df[df["camera"] == camera]
+                        if camera not in self.tel:
+                            self.tel[camera] = DBCameraInfos(tel=camera, df=df_sel)
+                        if table_name not in self.tel[camera]:
+                            self.tel[camera][table_name] = DBTableInfos(
+                                table_name=table_name, df=df_sel
+                            )
 
-                    # Pixel level information like pixel HV
-                    cols = {c for c in df_sel.columns}
+                        # Pixel level information like pixel HV
+                        cols = {c for c in df_sel.columns}
+                        cols2ignore = {"camera", "id", "drawer", "channel"}
+                        cols = cols.difference(cols2ignore)
+
+                        for col_name in cols:
+                            try:
+                                if flags & DBInfosFlag.DRAWER and flags & DBInfosFlag.PIXEL:
+                                    self.tel[camera][table_name][col_name] = DBPixelInfos(
+                                        name=col_name, orig_df=df_sel, verbose=self.verbose
+                                    )
+                                elif flags & DBInfosFlag.DRAWER:
+                                    # Module level information like FEB Temperature
+                                    self.tel[camera][table_name][col_name] = DBModuleInfos(
+                                        name=col_name, orig_df=df_sel, verbose=self.verbose
+                                    )
+                                    # print("Implement me")
+                                else:
+                                    # Camera level information like UCTS
+                                    self.tel[camera][table_name][col_name] = DBSimpleInfos(
+                                        name=col_name, orig_df=df_sel, verbose=self.verbose
+                                    )
+                                    # self.tel[camera][table_name][col_name] = DBInfos()
+                                    # print("Implement me")
+                            except Exception as err:
+                                log.error(
+                                    f"Reading column [{col_name}] from table [{table_name}]"
+                                    f"yield exception [{err}]"  # pffff flake8.............!
+                                )
+                                log.error(
+                                    "\t==> Consider specializing the function for those"
+                                    "data"
+                                )
+
+                else:
+                    cols = {c for c in df.columns}
                     cols2ignore = {"camera", "id", "drawer", "channel"}
                     cols = cols.difference(cols2ignore)
-
+                    if table_name not in self.infos:
+                        # better use __setitem__ ?
+                        self[table_name] = DBTableInfos(table_name=table_name, df=df)
                     for col_name in cols:
-                        try:
-                            if flags & DBInfosFlag.DRAWER and flags & DBInfosFlag.PIXEL:
-                                self.tel[camera][table_name][col_name] = DBPixelInfos(
-                                    name=col_name, orig_df=df_sel, verbose=self.verbose
-                                )
-                            elif flags & DBInfosFlag.DRAWER:
-                                # Module level information like FEB Temperature
-                                self.tel[camera][table_name][col_name] = DBModuleInfos(
-                                    name=col_name, orig_df=df_sel, verbose=self.verbose
-                                )
-                                # print("Implement me")
-                            else:
-                                # Camera level information like UCTS
-                                self.tel[camera][table_name][col_name] = DBSimpleInfos(
-                                    name=col_name, orig_df=df_sel, verbose=self.verbose
-                                )
-                                # self.tel[camera][table_name][col_name] = DBInfos()
-                                # print("Implement me")
-                        except Exception as err:
-                            log.error(
-                                f"Reading column [{col_name}] from table [{table_name}]"
-                                f"yield exception [{err}]"  # pffff flake8.............!
-                            )
-                            log.error(
-                                "\t==> Consider specializing the function for those"
-                                "data"
-                            )
-
-            else:
-                cols = {c for c in df.columns}
-                cols2ignore = {"camera", "id", "drawer", "channel"}
-                cols = cols.difference(cols2ignore)
-                if table_name not in self.infos:
-                    # better use __setitem__ ?
-                    self[table_name] = DBTableInfos(table_name=table_name, df=df)
-                for col_name in cols:
-                    # better use __setitem__ ?
-                    self[table_name][col_name] = DBSimpleInfos(
-                        name=col_name, orig_df=df
-                    )
+                        # better use __setitem__ ?
+                        self[table_name][col_name] = DBSimpleInfos(
+                            name=col_name, orig_df=df
+                        )
+            except Exception as err:
+                print(f"Problem Loading Table [{table_name}] --> Error: {err}")
 
     def Connect(self, *args):
         return self.connect(self, *args)
